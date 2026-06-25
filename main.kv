@@ -1,0 +1,92 @@
+#:import dp kivy.metrics.dp
+
+<TelaPrincipal>:
+    orientation: "vertical"
+    padding: dp(20)
+    spacing: dp(12)
+
+    canvas.before:
+        Color:
+            rgba: 0.05, 0.08, 0.13, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: "TESTE DE ABERTURA DE DESENHO"
+        bold: True
+        font_size: "21sp"
+        size_hint_y: None
+        height: dp(52)
+        color: 0.95, 0.97, 1, 1
+
+    Label:
+        text: "Acesso pela pasta vinculada do Android"
+        font_size: "14sp"
+        size_hint_y: None
+        height: dp(30)
+        color: 0.65, 0.76, 0.90, 1
+
+    Label:
+        text: root.pasta_status
+        bold: True
+        font_size: "14sp"
+        size_hint_y: None
+        height: dp(42)
+        text_size: self.width, None
+        halign: "center"
+        color: (0.35, 0.85, 0.55, 1) if root.pasta_configurada else (1, 0.68, 0.25, 1)
+
+    Button:
+        text: "1. VINCULAR PASTA DE REDE"
+        bold: True
+        font_size: "16sp"
+        size_hint_y: None
+        height: dp(58)
+        on_release: root.selecionar_pasta()
+
+    TextInput:
+        id: codigo
+        text: "1519"
+        hint_text: "Código do desenho"
+        multiline: False
+        font_size: "24sp"
+        size_hint_y: None
+        height: dp(60)
+        padding: dp(14), dp(14)
+        on_text_validate: root.abrir_desenho(self.text)
+
+    Button:
+        text: "2. LOCALIZAR E ABRIR DESENHO"
+        bold: True
+        font_size: "16sp"
+        size_hint_y: None
+        height: dp(62)
+        disabled: not root.pasta_configurada
+        on_release: root.abrir_desenho(codigo.text)
+
+    Button:
+        text: "DESVINCULAR PASTA"
+        font_size: "14sp"
+        size_hint_y: None
+        height: dp(46)
+        disabled: not root.pasta_configurada
+        on_release: root.limpar_pasta()
+
+    Label:
+        text: root.status
+        text_size: self.width, None
+        halign: "center"
+        valign: "middle"
+        font_size: "14sp"
+        color: 0.90, 0.93, 0.98, 1
+
+    Label:
+        text: root.ultima_uri
+        text_size: self.width, None
+        halign: "center"
+        valign: "top"
+        font_size: "11sp"
+        color: 0.55, 0.68, 0.82, 1
+        size_hint_y: None
+        height: dp(70)
