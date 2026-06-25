@@ -1,0 +1,94 @@
+#:import dp kivy.metrics.dp
+
+BoxLayout:
+    orientation: "vertical"
+    padding: dp(24)
+    spacing: dp(12)
+
+    canvas.before:
+        Color:
+            rgba: 0.055, 0.067, 0.09, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: "TESTE DE DESENHO VIA REDE"
+        bold: True
+        font_size: "22sp"
+        size_hint_y: None
+        height: dp(48)
+
+    Label:
+        text: "192.168.2.2:445  •  DADOS"
+        color: 0.35, 0.75, 1, 1
+        font_size: "14sp"
+        size_hint_y: None
+        height: dp(28)
+
+    Label:
+        text: "Domínio automático: iberoeq.local"
+        color: 0.65, 0.82, 1, 1
+        font_size: "14sp"
+        size_hint_y: None
+        height: dp(28)
+
+    Label:
+        text: "IBERO / Publico / BASE DE CONHECIMENTO"
+        color: 0.75, 0.78, 0.84, 1
+        font_size: "13sp"
+        size_hint_y: None
+        height: dp(28)
+
+    TextInput:
+        id: codigo
+        hint_text: "Código do desenho"
+        text: "1519"
+        multiline: False
+        font_size: "20sp"
+        size_hint_y: None
+        height: dp(58)
+        padding: dp(14), dp(14)
+
+    TextInput:
+        id: usuario
+        hint_text: "Usuário, ex.: guilherme.cruz"
+        multiline: False
+        font_size: "17sp"
+        size_hint_y: None
+        height: dp(54)
+        padding: dp(14), dp(12)
+
+    TextInput:
+        id: senha
+        hint_text: "Senha da rede"
+        password: True
+        multiline: False
+        font_size: "17sp"
+        size_hint_y: None
+        height: dp(54)
+        padding: dp(14), dp(12)
+
+    Button:
+        id: botao_abrir
+        text: "LOCALIZAR E ABRIR DESENHO"
+        bold: True
+        font_size: "17sp"
+        size_hint_y: None
+        height: dp(60)
+        on_release: app.abrir_desenho()
+
+    Label:
+        text: app.status_text
+        color: 0.9, 0.92, 0.96, 1
+        text_size: self.width, None
+        halign: "center"
+        valign: "middle"
+        font_size: "15sp"
+
+    Label:
+        text: "A senha é usada somente na consulta e não é salva."
+        color: 0.6, 0.63, 0.7, 1
+        font_size: "12sp"
+        size_hint_y: None
+        height: dp(34)
