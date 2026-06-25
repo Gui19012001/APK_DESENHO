@@ -1,0 +1,79 @@
+#:import dp kivy.metrics.dp
+
+<TelaPrincipal>:
+    orientation: "vertical"
+    padding: dp(22)
+    spacing: dp(14)
+
+    canvas.before:
+        Color:
+            rgba: 0.05, 0.08, 0.13, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        text: "TESTE DE CHAMADA DE DESENHO"
+        bold: True
+        font_size: "22sp"
+        size_hint_y: None
+        height: dp(55)
+        color: 0.95, 0.97, 1, 1
+
+    Label:
+        text: "Solid Explorer • servidor 192.168.2.2"
+        font_size: "15sp"
+        size_hint_y: None
+        height: dp(35)
+        color: 0.65, 0.75, 0.88, 1
+
+    TextInput:
+        id: codigo
+        text: "1519"
+        hint_text: "Código do desenho"
+        multiline: False
+        font_size: "24sp"
+        size_hint_y: None
+        height: dp(60)
+        padding: dp(14), dp(14)
+        input_filter: None
+        on_text_validate: root.abrir_desenho(self.text)
+
+    Button:
+        text: "ABRIR DESENHO NO SOLID EXPLORER"
+        bold: True
+        font_size: "17sp"
+        size_hint_y: None
+        height: dp(62)
+        on_release: root.abrir_desenho(codigo.text)
+
+    Button:
+        text: "ABRIR SOMENTE A PASTA"
+        font_size: "16sp"
+        size_hint_y: None
+        height: dp(56)
+        on_release: root.abrir_pasta()
+
+    Button:
+        text: "COPIAR URI PARA TESTE"
+        font_size: "15sp"
+        size_hint_y: None
+        height: dp(50)
+        on_release: root.copiar_uri()
+
+    Label:
+        text: root.status
+        text_size: self.width, None
+        halign: "center"
+        valign: "middle"
+        color: 0.88, 0.91, 0.96, 1
+
+    Label:
+        text: root.ultima_uri
+        text_size: self.width, None
+        halign: "center"
+        valign: "top"
+        font_size: "12sp"
+        color: 0.55, 0.68, 0.82, 1
+        size_hint_y: None
+        height: dp(95)
