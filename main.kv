@@ -1,0 +1,139 @@
+#:kivy 2.0
+
+BoxLayout:
+    orientation: 'vertical'
+    padding: dp(24)
+    spacing: dp(16)
+    canvas.before:
+        Color:
+            rgba: 0.07, 0.07, 0.10, 1
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    # Cabeçalho
+    BoxLayout:
+        orientation: 'vertical'
+        size_hint_y: None
+        height: self.minimum_height
+        spacing: dp(4)
+
+        Label:
+            text: 'CONSULTA DE DESENHOS'
+            font_size: sp(20)
+            bold: True
+            color: 1, 1, 1, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            halign: 'center'
+            text_size: self.width, None
+
+        Label:
+            text: '192.168.2.2:445  \u2022  DADOS'
+            font_size: sp(12)
+            color: 0.4, 0.7, 1, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            halign: 'center'
+            text_size: self.width, None
+
+        Label:
+            text: 'Domínio automático: iberoeq.local'
+            font_size: sp(11)
+            color: 0.4, 0.7, 1, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            halign: 'center'
+            text_size: self.width, None
+
+        Label:
+            text: 'IBERO / Publico / BASE DE CONHECIMENTO'
+            font_size: sp(11)
+            color: 0.6, 0.6, 0.6, 1
+            size_hint_y: None
+            height: self.texture_size[1]
+            halign: 'center'
+            text_size: self.width, None
+
+    # Campos de entrada
+    BoxLayout:
+        orientation: 'vertical'
+        spacing: dp(12)
+        size_hint_y: None
+        height: self.minimum_height
+
+        TextInput:
+            id: codigo
+            hint_text: 'Código do desenho (ex: 79)'
+            font_size: sp(16)
+            size_hint_y: None
+            height: dp(50)
+            padding: [dp(14), dp(14)]
+            background_color: 0.15, 0.15, 0.20, 1
+            foreground_color: 1, 1, 1, 1
+            hint_text_color: 0.5, 0.5, 0.5, 1
+            cursor_color: 0.4, 0.7, 1, 1
+            multiline: False
+
+        TextInput:
+            id: usuario
+            hint_text: 'Usuário (ex: guilherme.cruz)'
+            font_size: sp(16)
+            size_hint_y: None
+            height: dp(50)
+            padding: [dp(14), dp(14)]
+            background_color: 0.15, 0.15, 0.20, 1
+            foreground_color: 1, 1, 1, 1
+            hint_text_color: 0.5, 0.5, 0.5, 1
+            cursor_color: 0.4, 0.7, 1, 1
+            multiline: False
+
+        TextInput:
+            id: senha
+            hint_text: 'Senha da rede'
+            font_size: sp(16)
+            size_hint_y: None
+            height: dp(50)
+            padding: [dp(14), dp(14)]
+            background_color: 0.15, 0.15, 0.20, 1
+            foreground_color: 1, 1, 1, 1
+            hint_text_color: 0.5, 0.5, 0.5, 1
+            cursor_color: 0.4, 0.7, 1, 1
+            password: True
+            multiline: False
+
+    # Botão
+    Button:
+        id: botao_abrir
+        text: 'LOCALIZAR E ABRIR DESENHO'
+        font_size: sp(15)
+        bold: True
+        size_hint_y: None
+        height: dp(54)
+        background_color: 0.15, 0.45, 0.85, 1
+        color: 1, 1, 1, 1
+        on_release: app.abrir_desenho()
+
+    # Status
+    Label:
+        id: status_label
+        text: app.status_text
+        font_size: sp(13)
+        color: 0.85, 0.85, 0.85, 1
+        halign: 'center'
+        valign: 'top'
+        text_size: self.width, None
+        size_hint_y: None
+        height: self.texture_size[1]
+
+    Widget:
+
+    # Rodapé
+    Label:
+        text: 'A senha é usada somente na consulta e não é salva.'
+        font_size: sp(11)
+        color: 0.4, 0.4, 0.4, 1
+        size_hint_y: None
+        height: self.texture_size[1]
+        halign: 'center'
+        text_size: self.width, None
