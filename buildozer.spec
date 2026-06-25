@@ -22,7 +22,7 @@ android.archs = arm64-v8a
 android.accept_sdk_license = True
 
 android.gradle_dependencies = eu.agno3.jcifs:jcifs-ng:2.1.10
-android.add_src = android_src
+android.add_src = android_src/br/com/suaempresa/testedesenhosmb
 
 p4a.branch = master
 
