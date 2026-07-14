@@ -8,7 +8,7 @@ from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.properties import StringProperty
 
-SERVER = "192.168.2.2"
+SERVER = "\\192.168.2.2"
 PORT = 445
 SHARE = "DADOS"
 REMOTE_FOLDER = "IBERO/Publico/BASE DE CONHECIMENTO"
