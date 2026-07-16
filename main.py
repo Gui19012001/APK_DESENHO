@@ -51,6 +51,7 @@ class SmbConfig:
     username: str = ""
     password: str = ""
     port: int = 445
+    use_direct_tcp: bool = True
 
 
 def clean_code(value: str) -> str:
@@ -63,6 +64,25 @@ def clean_code(value: str) -> str:
 def normalize_remote_path(path: str) -> str:
     path = (path or "").replace("\\", "/").strip().strip("/")
     return path or "/"
+
+
+def smb_path_variants(path: str) -> list[str]:
+    """Return path spellings accepted by different SMB servers/pysmb builds."""
+    normalized = normalize_remote_path(path)
+    if normalized == "/":
+        return ["/"]
+
+    variants = [
+        f"/{normalized}",
+        normalized,
+        "\\" + normalized.replace("/", "\\"),
+        normalized.replace("/", "\\"),
+    ]
+    unique: list[str] = []
+    for item in variants:
+        if item not in unique:
+            unique.append(item)
+    return unique
 
 
 def join_remote(base: str, name: str) -> str:
@@ -189,7 +209,7 @@ class SmbDrawingClient:
             remote_name=cfg.server_name or cfg.server_ip,
             domain=cfg.domain or "",
             use_ntlm_v2=True,
-            is_direct_tcp=True,
+            is_direct_tcp=cfg.use_direct_tcp,
         )
         ok = self.conn.connect(cfg.server_ip, int(cfg.port), timeout=20)
         if not ok:
@@ -205,7 +225,25 @@ class SmbDrawingClient:
 
     def list_path_safe(self, path: str):
         assert self.conn is not None
-        return self.conn.listPath(self.config.share, path, timeout=30)
+        last_exc: Exception | None = None
+        for candidate in smb_path_variants(path):
+            try:
+                return self.conn.listPath(self.config.share, candidate, timeout=30)
+            except Exception as exc:
+                last_exc = exc
+        raise RuntimeError(self._format_smb_error(path, last_exc))
+
+    def _format_smb_error(self, path: str, exc: Exception | None) -> str:
+        detail = str(exc) if exc else "erro desconhecido"
+        share = self.config.share
+        hints = (
+            f"Falha ao listar a pasta '{path}' no compartilhamento '{share}'.\n"
+            f"Detalhe SMB: {detail}\n"
+            "Verifique se 'Compartilhamento' é apenas o nome do share (ex.: IBERO), "
+            "se a pasta fica em 'Pasta dentro do compartilhamento' (ex.: Publico/BASE DE CONHECIMENTO), "
+            "e teste o Nome do servidor/remote_name com o nome real do servidor em vez do IP."
+        )
+        return hints
 
     def retrieve_file(self, remote_path: str) -> bytes:
         assert self.conn is not None
@@ -291,11 +329,12 @@ class SmbTestApp(App):
         self.share = Field("Compartilhamento", self.config_data.share)
         self.remote_path = Field("Pasta dentro do compartilhamento", self.config_data.remote_path)
         self.domain = Field("Domínio", self.config_data.domain)
+        self.port = Field("Porta SMB", str(self.config_data.port))
         self.username = Field("Usuário", self.config_data.username)
         self.password = Field("Senha", self.config_data.password, password=True)
         self.code = Field("Código do desenho/produto", "")
 
-        for w in [self.server_ip, self.server_name, self.share, self.remote_path, self.domain, self.username, self.password, self.code]:
+        for w in [self.server_ip, self.server_name, self.share, self.remote_path, self.domain, self.port, self.username, self.password, self.code]:
             form.add_widget(w)
 
         scroll.add_widget(form)
@@ -339,6 +378,7 @@ class SmbTestApp(App):
             domain=self.domain.text,
             username=self.username.text,
             password=self.password.text,
+            port=self._parse_port(),
         )
         os.makedirs(self.user_data_dir, exist_ok=True)
         with open(self.config_path(), "w", encoding="utf-8") as f:
@@ -347,6 +387,12 @@ class SmbTestApp(App):
         if show_status:
             self.set_status("Configuração salva.")
         return cfg
+
+    def _parse_port(self) -> int:
+        try:
+            return int(self.port.text or "445")
+        except ValueError:
+            return 445
 
     def set_status(self, text: str):
         def update(_dt):
