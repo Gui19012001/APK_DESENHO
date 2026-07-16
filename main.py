@@ -199,6 +199,7 @@ class SmbDrawingClient:
             raise RuntimeError("Biblioteca pysmb não está instalada. Verifique requirements=pysmb.")
         self.config = config
         self.conn = None
+        self.effective_share = config.share
 
     def connect(self):
         cfg = self.config
@@ -223,33 +224,80 @@ class SmbDrawingClient:
         except Exception:
             pass
 
+    def share_path_candidates(self, path: str) -> list[tuple[str, str]]:
+        """Try configured share first, then path-first-segment as share fallback."""
+        share = (self.config.share or "").strip().strip("/\\")
+        normalized = normalize_remote_path(path)
+        candidates: list[tuple[str, str]] = []
+
+        for path_variant in smb_path_variants(normalized):
+            candidates.append((share, path_variant))
+
+        parts = [part for part in normalized.split("/") if part]
+        if len(parts) >= 2:
+            fallback_share = parts[0]
+            fallback_path = "/".join(parts[1:])
+            if fallback_share.lower() != share.lower():
+                for path_variant in smb_path_variants(fallback_path):
+                    candidates.append((fallback_share, path_variant))
+
+        unique: list[tuple[str, str]] = []
+        for candidate in candidates:
+            if candidate not in unique:
+                unique.append(candidate)
+        return unique
+
     def list_path_safe(self, path: str):
         assert self.conn is not None
-        last_exc: Exception | None = None
-        for candidate in smb_path_variants(path):
+        errors: list[str] = []
+        for share, candidate_path in self.share_path_candidates(path):
             try:
-                return self.conn.listPath(self.config.share, candidate, timeout=30)
+                items = self.conn.listPath(share, candidate_path, timeout=30)
+                self.effective_share = share
+                return items
             except Exception as exc:
-                last_exc = exc
-        raise RuntimeError(self._format_smb_error(path, last_exc))
+                errors.append(f"{share}:{candidate_path} -> {exc}")
+        raise RuntimeError(self._format_smb_error(path, errors))
 
-    def _format_smb_error(self, path: str, exc: Exception | None) -> str:
-        detail = str(exc) if exc else "erro desconhecido"
+    def _format_smb_error(self, path: str, errors: list[str]) -> str:
         share = self.config.share
+        detail = "\n".join(errors[-4:]) if errors else "erro desconhecido"
         hints = (
             f"Falha ao listar a pasta '{path}' no compartilhamento '{share}'.\n"
-            f"Detalhe SMB: {detail}\n"
-            "Verifique se 'Compartilhamento' é apenas o nome do share (ex.: IBERO), "
-            "se a pasta fica em 'Pasta dentro do compartilhamento' (ex.: Publico/BASE DE CONHECIMENTO), "
-            "e teste o Nome do servidor/remote_name com o nome real do servidor em vez do IP."
+            f"Tentativas SMB:\n{detail}\n"
+            "Se todas as tentativas falharem, o problema provavelmente é o nome do compartilhamento, "
+            "permissão do usuário, remote_name/nome real do servidor, porta 445 bloqueada ou servidor exigindo SMB3."
         )
         return hints
 
     def retrieve_file(self, remote_path: str) -> bytes:
         assert self.conn is not None
         buffer = io.BytesIO()
-        self.conn.retrieveFile(self.config.share, remote_path, buffer, timeout=60)
+        share = self.effective_share or self.config.share
+        path = self._path_for_share(remote_path, share)
+        self.conn.retrieveFile(share, path, buffer, timeout=60)
         return buffer.getvalue()
+
+    def _path_for_share(self, remote_path: str, share: str) -> str:
+        normalized = normalize_remote_path(remote_path)
+        parts = [part for part in normalized.split("/") if part]
+        if parts and parts[0].lower() == share.lower():
+            return "/".join(parts[1:]) or "/"
+        return normalized
+
+    def diagnostic_report(self) -> str:
+        assert self.conn is not None
+        lines = ["Diagnóstico SMB:"]
+        for share, path in self.share_path_candidates(self.config.remote_path):
+            try:
+                items = self.conn.listPath(share, path, timeout=15)
+                qtd = len([x for x in items if x.filename not in (".", "..")])
+                lines.append(f"OK: share={share} caminho={path} itens={qtd}")
+                self.effective_share = share
+                break
+            except Exception as exc:
+                lines.append(f"FALHOU: share={share} caminho={path} erro={exc}")
+        return "\n".join(lines)
 
     def find_pdf(self, code: str) -> str | None:
         code_clean = clean_code(code).lower()
@@ -343,12 +391,15 @@ class SmbTestApp(App):
         buttons = BoxLayout(orientation="horizontal", spacing=dp(8), size_hint_y=None, height=dp(52))
         btn_save = Button(text="Salvar config")
         btn_test = Button(text="Testar conexão")
+        btn_diag = Button(text="Diagnóstico")
         btn_find = Button(text="Buscar PDF")
         btn_save.bind(on_release=lambda *_: self.save_config_from_ui(show_status=True))
         btn_test.bind(on_release=lambda *_: self.run_thread("test"))
+        btn_diag.bind(on_release=lambda *_: self.run_thread("diag"))
         btn_find.bind(on_release=lambda *_: self.run_thread("find"))
         buttons.add_widget(btn_save)
         buttons.add_widget(btn_test)
+        buttons.add_widget(btn_diag)
         buttons.add_widget(btn_find)
         root.add_widget(buttons)
 
@@ -414,11 +465,19 @@ class SmbTestApp(App):
             client = SmbDrawingClient(cfg)
             client.connect()
 
+            if mode == "diag":
+                self.set_status(client.diagnostic_report())
+                return
+
             if mode == "test":
                 base = normalize_remote_path(cfg.remote_path)
                 items = client.list_path_safe(base)
                 qtd = len([x for x in items if x.filename not in (".", "..")])
-                self.set_status(f"Conexão OK. Pasta acessível: {base}\nItens encontrados: {qtd}")
+                self.set_status(
+                    f"Conexão OK. Pasta acessível: {base}\n"
+                    f"Share usado: {client.effective_share}\n"
+                    f"Itens encontrados: {qtd}"
+                )
                 return
 
             code = self.code.text
