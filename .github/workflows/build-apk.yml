@@ -1,4 +1,4 @@
-name: Build APK Android
+name: Build Android APK
 
 on:
   workflow_dispatch:
@@ -7,66 +7,64 @@ on:
       - main
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Baixar repositório
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Configurar Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Instalar dependências do Ubuntu
+      - name: Install Linux dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git \
-            zip \
-            unzip \
-            curl \
-            openjdk-17-jdk \
-            python3-pip \
-            python3-virtualenv \
+          sudo apt update
+          sudo apt install -y \
+            ant \
             autoconf \
             automake \
-            autopoint \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
+            ccache \
+            cmake \
+            g++ \
+            gcc \
+            gettext \
+            git \
+            lbzip2 \
+            libffi-dev \
+            libltdl-dev \
             libncurses5-dev \
             libncursesw5-dev \
-            libtinfo6 \
-            cmake \
-            libffi-dev \
             libssl-dev \
-            gettext
+            libtool \
+            libtinfo6 \
+            make \
+            openjdk-17-jdk \
+            patch \
+            pkg-config \
+            python3-dev \
+            python3-pip \
+            python3-venv \
+            unzip \
+            wget \
+            zip \
+            zlib1g-dev
 
-      - name: Instalar Rust
+      - name: Install Buildozer
         run: |
-          curl https://sh.rustup.rs -sSf | sh -s -- -y
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          source "$HOME/.cargo/env"
-          rustc --version
-          cargo --version
-
-      - name: Instalar Buildozer
-        run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install buildozer "cython==0.29.34"
-
-          python --version
-          buildozer --version
-          cython --version
-          java -version
+          python -m pip install --upgrade pip wheel
+          python -m pip install \
+            setuptools \
+            cython==0.29.34 \
+            buildozer
 
       - name: Preparar bibliotecas SMB
         run: |
@@ -76,15 +74,18 @@ jobs:
           python -m pip install \
             --no-deps \
             --target libs \
-            "pyasn1==0.6.1" \
-            "pysmb==1.2.13"
+            pyasn1==0.6.1 \
+            tqdm==4.67.1 \
+            pysmb==1.2.13
 
-          PYTHONPATH="$PWD/libs" python -c \
-            "from smb.SMBConnection import SMBConnection; import pyasn1; print('Bibliotecas SMB OK')"
-
+          echo "===== BIBLIOTECAS INSTALADAS ====="
           find libs -maxdepth 2 -type d | sort
 
-      - name: Conferir arquivos
+          echo "===== TESTE DE IMPORTAÇÃO ====="
+          PYTHONPATH="$PWD/libs" python -c \
+            "from smb.SMBConnection import SMBConnection; import pyasn1; import tqdm; print('SMB, pyasn1 e tqdm OK')"
+
+      - name: Conferir configuração
         run: |
           echo "===== BUILD SPEC ====="
           cat buildozer.spec
@@ -92,42 +93,25 @@ jobs:
           echo "===== REQUIREMENTS ====="
           grep -n "^requirements" buildozer.spec
 
-          echo "===== MAIN.PY ====="
-          test -f main.py
-
-          echo "===== LIBS SMB ====="
+          echo "===== ARQUIVOS SMB ====="
           test -d libs/smb
           test -d libs/nmb
           test -d libs/pyasn1
+          test -d libs/tqdm
 
-      - name: Limpar compilação anterior
+      - name: Limpar build anterior
         run: |
           rm -rf .buildozer
           rm -rf bin
           rm -f build.log
 
-      - name: Gerar APK
-        id: build
-        continue-on-error: true
+      - name: Build APK
         shell: bash
         run: |
           set -o pipefail
           buildozer -v android debug 2>&1 | tee build.log
 
-      - name: Mostrar erro verdadeiro
-        if: always()
-        shell: bash
-        run: |
-          echo "===== PRINCIPAIS ERROS ====="
-
-          grep -nEi \
-            "error:|ERROR|Traceback|failed|not found|No module named|Could not|Exception" \
-            build.log | tail -n 200 || true
-
-          echo "===== ÚLTIMAS 300 LINHAS ====="
-          tail -n 300 build.log || true
-
-      - name: Publicar log completo
+      - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -135,16 +119,9 @@ jobs:
           path: build.log
           if-no-files-found: warn
 
-      - name: Publicar APK
-        if: steps.build.outcome == 'success'
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: apk-teste-desenho-smb
+          name: apk
           path: bin/*.apk
           if-no-files-found: error
-
-      - name: Finalizar com erro
-        if: steps.build.outcome == 'failure'
-        run: |
-          echo "A compilação falhou. Consulte o artefato build-log."
-          exit 1
