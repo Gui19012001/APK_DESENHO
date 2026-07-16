@@ -36,6 +36,11 @@ try:
 except Exception:  # pragma: no cover
     SMBConnection = None
 
+try:
+    import smbclient
+except Exception:  # pragma: no cover
+    smbclient = None
+
 
 APP_TITLE = "Teste Desenho SMB"
 CONFIG_FILE = "config_smb.json"
@@ -52,6 +57,7 @@ class SmbConfig:
     password: str = ""
     port: int = 445
     use_direct_tcp: bool = True
+    backend: str = "auto"  # auto, pysmb ou smbprotocol
 
 
 def clean_code(value: str) -> str:
@@ -82,6 +88,30 @@ def smb_path_variants(path: str) -> list[str]:
     for item in variants:
         if item not in unique:
             unique.append(item)
+    return unique
+
+
+def share_path_candidates_for_config(config: SmbConfig, path: str) -> list[tuple[str, str]]:
+    """Try configured share first, then path-first-segment as share fallback."""
+    share = (config.share or "").strip().strip("/\\")
+    normalized = normalize_remote_path(path)
+    candidates: list[tuple[str, str]] = []
+
+    for path_variant in smb_path_variants(normalized):
+        candidates.append((share, path_variant))
+
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) >= 2:
+        fallback_share = parts[0]
+        fallback_path = "/".join(parts[1:])
+        if fallback_share.lower() != share.lower():
+            for path_variant in smb_path_variants(fallback_path):
+                candidates.append((fallback_share, path_variant))
+
+    unique: list[tuple[str, str]] = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
     return unique
 
 
@@ -193,6 +223,115 @@ class AndroidFileHelper:
         return out_file.getAbsolutePath()
 
 
+@dataclass
+class RemoteEntry:
+    filename: str
+    isDirectory: bool
+
+
+class SmbProtocolDrawingClient:
+    """SMB2/SMB3 client based on smbprotocol/smbclient when packaged."""
+
+    def __init__(self, config: SmbConfig):
+        if smbclient is None:
+            raise RuntimeError(
+                "Biblioteca smbprotocol não está instalada no APK. "
+                "Verifique requirements=smbprotocol,pyspnego,cryptography."
+            )
+        self.config = config
+        self.effective_share = config.share
+        self.connected = False
+
+    def connect(self):
+        cfg = self.config
+        username = cfg.username
+        if cfg.domain and "\\" not in username and "@" not in username:
+            username = f"{cfg.domain}\\{username}"
+        smbclient.register_session(
+            cfg.server_ip,
+            username=username,
+            password=cfg.password,
+            port=int(cfg.port),
+            encrypt=False,
+            connection_timeout=20,
+        )
+        self.connected = True
+        return self
+
+    def close(self):
+        try:
+            smbclient.reset_connection_cache()
+        except Exception:
+            pass
+
+    def share_path_candidates(self, path: str) -> list[tuple[str, str]]:
+        return share_path_candidates_for_config(self.config, path)
+
+    def _unc(self, share: str, path: str) -> str:
+        normalized = normalize_remote_path(path)
+        if normalized == "/":
+            return rf"\\{self.config.server_ip}\{share}"
+        return rf"\\{self.config.server_ip}\{share}\{normalized.replace('/', '\\')}"
+
+    def list_path_safe(self, path: str):
+        errors: list[str] = []
+        for share, candidate_path in self.share_path_candidates(path):
+            try:
+                unc = self._unc(share, candidate_path)
+                names = smbclient.listdir(unc)
+                entries: list[RemoteEntry] = []
+                for name in names:
+                    if name in (".", ".."):
+                        continue
+                    child_unc = unc.rstrip("\\") + "\\" + name
+                    try:
+                        is_dir = smbclient.path.isdir(child_unc)
+                    except Exception:
+                        is_dir = False
+                    entries.append(RemoteEntry(filename=name, isDirectory=is_dir))
+                self.effective_share = share
+                return entries
+            except Exception as exc:
+                errors.append(f"{share}:{candidate_path} -> {exc}")
+        raise RuntimeError(self._format_smb_error(path, errors))
+
+    def _format_smb_error(self, path: str, errors: list[str]) -> str:
+        detail = "\n".join(errors[-4:]) if errors else "erro desconhecido"
+        return (
+            f"Falha SMB3/smbprotocol ao listar '{path}' no share '{self.config.share}'.\n"
+            f"Tentativas:\n{detail}\n"
+            "Confirme usuário, senha, domínio, nome do share e liberação da porta 445."
+        )
+
+    def retrieve_file(self, remote_path: str) -> bytes:
+        share = self.effective_share or self.config.share
+        path = self._path_for_share(remote_path, share)
+        unc = self._unc(share, path)
+        with smbclient.open_file(unc, mode="rb") as fd:
+            return fd.read()
+
+    def _path_for_share(self, remote_path: str, share: str) -> str:
+        normalized = normalize_remote_path(remote_path)
+        parts = [part for part in normalized.split("/") if part]
+        if parts and parts[0].lower() == share.lower():
+            return "/".join(parts[1:]) or "/"
+        return normalized
+
+    def diagnostic_report(self) -> str:
+        lines = ["Diagnóstico SMB3/smbprotocol:"]
+        for share, path in self.share_path_candidates(self.config.remote_path):
+            try:
+                items = self.list_path_safe(path)
+                lines.append(f"OK: share={self.effective_share} caminho={path} itens={len(items)}")
+                break
+            except Exception as exc:
+                lines.append(f"FALHOU: share={share} caminho={path} erro={exc}")
+        return "\n".join(lines)
+
+    def find_pdf(self, code: str) -> str | None:
+        return find_pdf_with_client(self, code)
+
+
 class SmbDrawingClient:
     def __init__(self, config: SmbConfig):
         if SMBConnection is None:
@@ -225,27 +364,7 @@ class SmbDrawingClient:
             pass
 
     def share_path_candidates(self, path: str) -> list[tuple[str, str]]:
-        """Try configured share first, then path-first-segment as share fallback."""
-        share = (self.config.share or "").strip().strip("/\\")
-        normalized = normalize_remote_path(path)
-        candidates: list[tuple[str, str]] = []
-
-        for path_variant in smb_path_variants(normalized):
-            candidates.append((share, path_variant))
-
-        parts = [part for part in normalized.split("/") if part]
-        if len(parts) >= 2:
-            fallback_share = parts[0]
-            fallback_path = "/".join(parts[1:])
-            if fallback_share.lower() != share.lower():
-                for path_variant in smb_path_variants(fallback_path):
-                    candidates.append((fallback_share, path_variant))
-
-        unique: list[tuple[str, str]] = []
-        for candidate in candidates:
-            if candidate not in unique:
-                unique.append(candidate)
-        return unique
+        return share_path_candidates_for_config(self.config, path)
 
     def list_path_safe(self, path: str):
         assert self.conn is not None
@@ -300,47 +419,60 @@ class SmbDrawingClient:
         return "\n".join(lines)
 
     def find_pdf(self, code: str) -> str | None:
-        code_clean = clean_code(code).lower()
-        base_path = normalize_remote_path(self.config.remote_path)
+        return find_pdf_with_client(self, code)
 
-        # Estratégia 1: varre recursivamente e prioriza exato > começa com > contém.
-        exact_matches: list[str] = []
-        starts_matches: list[str] = []
-        contains_matches: list[str] = []
 
-        def walk(path: str, depth: int = 0):
-            # limite de segurança para evitar loop em árvore muito grande
-            if depth > 10:
-                return
-            for item in self.list_path_safe(path):
-                name = item.filename
-                if name in (".", ".."):
-                    continue
-                full = join_remote(path, name)
-                if item.isDirectory:
-                    walk(full, depth + 1)
-                    continue
+def find_pdf_with_client(client, code: str) -> str | None:
+    code_clean = clean_code(code).lower()
+    base_path = normalize_remote_path(client.config.remote_path)
 
-                lower_name = name.lower()
-                if not lower_name.endswith(".pdf"):
-                    continue
-                stem = lower_name[:-4]
-                if stem == code_clean:
-                    exact_matches.append(full)
-                elif stem.startswith(code_clean):
-                    starts_matches.append(full)
-                elif code_clean in stem:
-                    contains_matches.append(full)
+    exact_matches: list[str] = []
+    starts_matches: list[str] = []
+    contains_matches: list[str] = []
 
-        walk(base_path)
+    def walk(path: str, depth: int = 0):
+        if depth > 10:
+            return
+        for item in client.list_path_safe(path):
+            name = item.filename
+            if name in (".", ".."):
+                continue
+            full = join_remote(path, name)
+            if item.isDirectory:
+                walk(full, depth + 1)
+                continue
 
-        if exact_matches:
-            return sorted(exact_matches)[0]
-        if starts_matches:
-            return sorted(starts_matches)[0]
-        if contains_matches:
-            return sorted(contains_matches)[0]
-        return None
+            lower_name = name.lower()
+            if not lower_name.endswith(".pdf"):
+                continue
+            stem = lower_name[:-4]
+            if stem == code_clean:
+                exact_matches.append(full)
+            elif stem.startswith(code_clean):
+                starts_matches.append(full)
+            elif code_clean in stem:
+                contains_matches.append(full)
+
+    walk(base_path)
+
+    if exact_matches:
+        return sorted(exact_matches)[0]
+    if starts_matches:
+        return sorted(starts_matches)[0]
+    if contains_matches:
+        return sorted(contains_matches)[0]
+    return None
+
+
+def create_smb_client(config: SmbConfig):
+    backend = (config.backend or "auto").strip().lower()
+    if backend == "smbprotocol":
+        return SmbProtocolDrawingClient(config)
+    if backend == "pysmb":
+        return SmbDrawingClient(config)
+    if smbclient is not None:
+        return SmbProtocolDrawingClient(config)
+    return SmbDrawingClient(config)
 
 
 class Field(BoxLayout):
@@ -378,11 +510,12 @@ class SmbTestApp(App):
         self.remote_path = Field("Pasta dentro do compartilhamento", self.config_data.remote_path)
         self.domain = Field("Domínio", self.config_data.domain)
         self.port = Field("Porta SMB", str(self.config_data.port))
+        self.backend = Field("Modo SMB (auto/pysmb/smbprotocol)", self.config_data.backend)
         self.username = Field("Usuário", self.config_data.username)
         self.password = Field("Senha", self.config_data.password, password=True)
         self.code = Field("Código do desenho/produto", "")
 
-        for w in [self.server_ip, self.server_name, self.share, self.remote_path, self.domain, self.port, self.username, self.password, self.code]:
+        for w in [self.server_ip, self.server_name, self.share, self.remote_path, self.domain, self.port, self.backend, self.username, self.password, self.code]:
             form.add_widget(w)
 
         scroll.add_widget(form)
@@ -430,6 +563,7 @@ class SmbTestApp(App):
             username=self.username.text,
             password=self.password.text,
             port=self._parse_port(),
+            backend=self.backend.text or "auto",
         )
         os.makedirs(self.user_data_dir, exist_ok=True)
         with open(self.config_path(), "w", encoding="utf-8") as f:
@@ -462,7 +596,7 @@ class SmbTestApp(App):
         client = None
         try:
             self.set_status("Conectando ao servidor SMB...")
-            client = SmbDrawingClient(cfg)
+            client = create_smb_client(cfg)
             client.connect()
 
             if mode == "diag":
