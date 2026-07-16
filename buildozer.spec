@@ -9,7 +9,7 @@ source.exclude_dirs = .git,.github,__pycache__,bin,.buildozer,venv,.venv
 
 version = 0.1.0
 
-requirements = python3,kivy,pyjnius,pysmb
+requirements = python3,kivy,pyjnius,pyasn1,tqdm,pysmb==1.2.13
 
 orientation = portrait
 fullscreen = 0
